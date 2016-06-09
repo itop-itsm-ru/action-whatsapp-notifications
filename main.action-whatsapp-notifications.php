@@ -1,8 +1,8 @@
 <?php
 
-require_once './Chat-API/src/whatsprot.class.php';
+require_once MODULESROOT.'action-whatsapp-notifications/Chat-API/src/whatsprot.class.php';
 
-class ActionWhatsapp extends ActionNotification
+class ActionWhatspp extends ActionNotification
 {
     public static function Init()
     {
@@ -22,11 +22,11 @@ class ActionWhatsapp extends ActionNotification
         MetaModel::Init_InheritAttributes();
 
         MetaModel::Init_AddAttribute(new AttributeString("test_recipient", array("allowed_values"=>null, "sql"=>"test_recipient", "default_value"=>"", "is_null_allowed"=>true, "depends_on"=>array())));
-        MetaModel::Init_AddAttribute(new AttributeOQL("to", array("allowed_values"=>null, "sql"=>"to", "default_value"=>null, "is_null_allowed"=>true, "depends_on"=>array())));
-        MetaModel::Init_AddAttribute(new AttributeTemplateText("body", array("allowed_values"=>null, "sql"=>"body", "default_value"=>null, "is_null_allowed"=>false, "depends_on"=>array())));
+        MetaModel::Init_AddAttribute(new AttributeOQL("target", array("allowed_values"=>null, "sql"=>"target", "default_value"=>null, "is_null_allowed"=>true, "depends_on"=>array())));
+        MetaModel::Init_AddAttribute(new AttributeTemplateText("message", array("allowed_values"=>null, "sql"=>"message", "default_value"=>null, "is_null_allowed"=>false, "depends_on"=>array())));
         // Display lists
-        MetaModel::Init_SetZListItems('details', array('name', 'description', 'status', 'test_recipient', 'to', 'body', 'trigger_list'));
-        MetaModel::Init_SetZListItems('list', array('name', 'status', 'to'));
+        MetaModel::Init_SetZListItems('details', array('name', 'description', 'status', 'test_recipient', 'target', 'message', 'trigger_list'));
+        MetaModel::Init_SetZListItems('list', array('name', 'status', 'target'));
         // Search criteria
         MetaModel::Init_SetZListItems('standard_search', array('name','description', 'status'));
 //		MetaModel::Init_SetZListItems('advanced_search', array('name'));
@@ -37,14 +37,15 @@ class ActionWhatsapp extends ActionNotification
 
     // Errors management : not that simple because we need that function to be
     // executed in the background, while making sure that any issue would be reported clearly
-    protected $m_aMailErrors; //array of strings explaining the issue
+    protected $m_aWhatsAppErrors; //array of strings explaining the issue
 
-    // returns a the list of emails as a string, or a detailed error description
+    private $sModuleName = 'action-whatsapp-notifications';
+
+    // returns a the list of target phone numbers as an array, or a detailed error description
     protected function FindRecipients($sRecipAttCode, $aArgs)
     {
         $sOQL = $this->Get($sRecipAttCode);
-        if (strlen($sOQL) == '') return '';
-
+        if (strlen($sOQL) == '') return array();
         try
         {
             $oSearch = DBObjectSearch::FromOQL($sOQL);
@@ -52,24 +53,16 @@ class ActionWhatsapp extends ActionNotification
         }
         catch (OQLException $e)
         {
-            $this->m_aMailErrors[] = "query syntax error for recipient '$sRecipAttCode'";
+            $this->m_aWhatsAppErrors[] = "query syntax error for recipient '$sRecipAttCode'";
             return $e->getMessage();
         }
 
         $sClass = $oSearch->GetClass();
-        // Determine the email attribute (the first one will be our choice)
-        foreach (MetaModel::ListAttributeDefs($sClass) as $sAttCode => $oAttDef)
+        $sWhatsAppAttCode = Metamodel::GetModuleSetting($this->sModuleName, 'target_attcode', 'whatsapp');
+
+        if (!MetaModel::IsValidAttCode($sClass, $sWhatsAppAttCode, true))
         {
-            if ($oAttDef instanceof AttributeEmailAddress)
-            {
-                $sEmailAttCode = $sAttCode;
-                // we've got one, exit the loop
-                break;
-            }
-        }
-        if (!isset($sEmailAttCode))
-        {
-            $this->m_aMailErrors[] = "wrong target for recipient '$sRecipAttCode'";
+            $this->m_aWhatsAppErrors[] = "wrong target for recipient '$sRecipAttCode'";
             return "The objects of the class '$sClass' do not have any email attribute";
         }
 
@@ -77,20 +70,22 @@ class ActionWhatsapp extends ActionNotification
         $aRecipients = array();
         while ($oObj = $oSet->Fetch())
         {
-            $sAddress = trim($oObj->Get($sEmailAttCode));
-            if (strlen($sAddress) > 0)
+            $sTarget = trim($oObj->Get($sWhatsAppAttCode));
+            if (strlen($sTarget) > 0)
             {
-                $aRecipients[] = $sAddress;
+                $aRecipients[] = $sTarget;
                 $this->m_iRecipients++;
             }
         }
-        return implode(', ', $aRecipients);
+        return $aRecipients;
     }
     
     public function DoExecute($oTrigger, $aContextArgs)
     {
+        if (MetaModel::GetModuleSetting($this->sModuleName, 'enabled', false) !== true) return;
         if (MetaModel::IsLogEnabledNotification())
         {
+            // TODO: Create own log class
             $oLog = new EventNotificationEmail();
             if ($this->IsBeingTested())
             {
@@ -147,13 +142,12 @@ class ActionWhatsapp extends ActionNotification
         try
         {
             $this->m_iRecipients = 0;
-            $this->m_aMailErrors = array();
+            $this->m_aWhatsAppErrors = array();
             $bRes = false; // until we do succeed in sending the email
 
             // Determine recicipients
-            $sTo = $this->FindRecipients('to', $aContextArgs);
-            $sBody = MetaModel::ApplyParams($this->Get('body'), $aContextArgs);
-
+            $aTargets = $this->FindRecipients('target', $aContextArgs);
+            $sMessage = MetaModel::ApplyParams($this->Get('message'), $aContextArgs);
             $oObj = $aContextArgs['this->object()'];
         }
         catch(Exception $e)
@@ -168,67 +162,24 @@ class ActionWhatsapp extends ActionNotification
             // Note: we have to secure this because those values are calculated
             // inside the try statement, and we would like to keep track of as
             // many data as we could while some variables may still be undefined
-            if (isset($sTo))       $oLog->Set('to', $sTo);
-            if (isset($sBody))     $oLog->Set('body', $sBody);
+            if (isset($aTargets)) $oLog->Set('to', implode(', ', $aTargets));
+            if (isset($sMessage)) $oLog->Set('body', $sMessage);
         }
-
-        // Create a instance of WhastPort.
-        $oWA = new WhatsProt($username, $nickname, $debug);
-
-        $oWA->connect(); // Connect to WhatsApp network
-        $oWA->loginWithPassword($password); // logging in with the password we got!
-
-        $target = '79263646956'; // The number of the person you are sending the message
-        $message = 'Ты тоже это слышишь?';
-
-        $oWA->loginWithPassword($password);
-        $oWA->sendGetServerProperties();
-        $oWA->sendClientConfig();
-        $sync = [$target];
-        $oWA->sendSync($sync);
-        $oWA->pollMessage();
-        $oWA->sendMessage($target , $message);
-
-
-        $oEmail = new EMail();
+        $sUsername = MetaModel::GetModuleSetting($this->sModuleName, 'username', '');
+        $sPassword = MetaModel::GetModuleSetting($this->sModuleName, 'password', '');
+        if ($sUsername == '' || $sPassword == '') return 'WhatsApp username or password is empty in iTop config file.';
+        $sNickname = MetaModel::GetModuleSetting($this->sModuleName, 'nickname', '');
+        $bDebug = MetaModel::GetModuleSetting($this->sModuleName, 'debug', false);
+        $bLog = MetaModel::GetModuleSetting($this->sModuleName, 'log', false);
+        $sDataDir = MetaModel::GetModuleSetting($this->sModuleName, 'data_dir', APPROOT.'/data/wadata');
 
         if ($this->IsBeingTested())
         {
-            $oEmail->SetSubject('TEST['.$sSubject.']');
-            $sTestBody = $sBody;
-            $sTestBody .= "<div style=\"border: dashed;\">\n";
-            $sTestBody .= "<h1>Testing email notification ".$this->GetHyperlink()."</h1>\n";
-            $sTestBody .= "<p>The email should be sent with the following properties\n";
-            $sTestBody .= "<ul>\n";
-            $sTestBody .= "<li>TO: $sTo</li>\n";
-            $sTestBody .= "<li>CC: $sCC</li>\n";
-            $sTestBody .= "<li>BCC: $sBCC</li>\n";
-            $sTestBody .= "<li>From: $sFrom</li>\n";
-            $sTestBody .= "<li>Reply-To: $sReplyTo</li>\n";
-            $sTestBody .= "<li>References: $sReference</li>\n";
-            $sTestBody .= "</ul>\n";
-            $sTestBody .= "</p>\n";
-            $sTestBody .= "</div>\n";
-            $oEmail->SetBody($sTestBody);
-            $oEmail->SetRecipientTO($this->Get('test_recipient'));
-            $oEmail->SetRecipientFrom($this->Get('test_recipient'));
-            $oEmail->SetReferences($sReference);
-            $oEmail->SetMessageId($sMessageId);
+            $sMessage = 'TEST['.$sMessage.']';
+            $aTargets = [$this->Get('test_recipient')];
         }
-        else
-        {
-            $oEmail->SetSubject($sSubject);
-            $oEmail->SetBody($sBody);
-            $oEmail->SetRecipientTO($sTo);
-            $oEmail->SetRecipientCC($sCC);
-            $oEmail->SetRecipientBCC($sBCC);
-            $oEmail->SetRecipientFrom($sFrom);
-            $oEmail->SetRecipientReplyTo($sReplyTo);
-            $oEmail->SetReferences($sReference);
-            $oEmail->SetMessageId($sMessageId);
-        }
-
-        if (empty($this->m_aMailErrors))
+        
+        if (empty($this->m_aWhatsAppErrors))
         {
             if ($this->m_iRecipients == 0)
             {
@@ -236,25 +187,29 @@ class ActionWhatsapp extends ActionNotification
             }
             else
             {
-                $iRes = $oEmail->Send($aErrors, false, $oLog); // allow asynchronous mode
-                switch ($iRes)
+                SetupUtils::builddir($sDataDir);
+                $oWA = new WhatsProt($sUsername, $sNickname, $bDebug, $bLog, $sDataDir);
+                $oWA->connect();
+                $oWA->loginWithPassword($sPassword);
+                $oWA->sendGetServerProperties();
+                $oWA->sendClientConfig();
+                $sMessageId = $oWA->sendBroadcastMessage($aTargets, $sMessage);
+                $bRes = $oWA->pollMessage();
+                if ($bRes)
                 {
-                    case EMAIL_SEND_OK:
-                        return "Sent";
-
-                    case EMAIL_SEND_PENDING:
-                        return "Pending";
-
-                    case EMAIL_SEND_ERROR:
-                        return "Errors: ".implode(', ', $aErrors);
+                    return 'Message sent, id: '.$sMessageId;
+                }
+                else
+                {
+                    return 'Error occurred while we were trying to send messages.';
                 }
             }
         }
         else
         {
-            if (is_array($this->m_aMailErrors) && count($this->m_aMailErrors) > 0)
+            if (is_array($this->m_aWhatsAppErrors) && count($this->m_aWhatsAppErrors) > 0)
             {
-                $sError = implode(', ', $this->m_aMailErrors);
+                $sError = implode(', ', $this->m_aWhatsAppErrors);
             }
             else
             {

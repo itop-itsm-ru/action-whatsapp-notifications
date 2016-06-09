@@ -15,7 +15,7 @@ SetupWebPage::AddModule(
 		// Setup
 		//
 		'dependencies' => array(
-			
+			'itop-config-mgmt/2.2.0'
 		),
 		'mandatory' => false,
 		'visible' => true,
@@ -23,7 +23,8 @@ SetupWebPage::AddModule(
 		// Components
 		//
 		'datamodel' => array(
-			'main.action-whatsapp-notifications.php'
+			'main.action-whatsapp-notifications.php',
+			'model.action-whatsapp-notifications.php'
 		),
 		'webservice' => array(
 			
@@ -44,6 +45,13 @@ SetupWebPage::AddModule(
 		//
 		'settings' => array(
 			// Module specific settings go here, if any
+			'enabled' => false,
+			// Enter here your phone number with country code but without + or 00, ie: 34123456789
+			'username' => '',
+			// The password that you got when you were registering the phone number
+			'password' => '',
+			// Your nickname, it will appear in push notifications
+			'nickname' => ''
 		),
 	)
 );
