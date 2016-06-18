@@ -1,4 +1,11 @@
 <?php
+/**
+ * WhatsApp Notification Module
+ * https://github.com/itop-itsm-ru/action-whatsapp-notifications
+ *
+ * @author      Vladimir Kunin <v.b.kunin@gmail.com>
+ * @license     http://www.opensource.org/licenses/gpl-3.0.html LGPL
+ */
 
 require_once MODULESROOT.'action-whatsapp-notifications/Chat-API/src/whatsprot.class.php';
 

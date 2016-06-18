@@ -1,9 +1,10 @@
 <?php
 /**
- * Localized data
+ * WhatsApp Notification Module
+ * https://github.com/itop-itsm-ru/action-whatsapp-notifications
  *
- * @copyright   Copyright (C) 2016 Vladimir Kunin <v.b.kunin@gmail.com>
- * @license     http://opensource.org/licenses/AGPL-3.0
+ * @author      Vladimir Kunin <v.b.kunin@gmail.com>
+ * @license     http://www.opensource.org/licenses/gpl-3.0.html LGPL
  */
 
 Dict::Add('RU RU', 'Russian', 'Russian', array(
